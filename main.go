@@ -44,7 +44,8 @@ type TokenNameAndDecimals struct {
 }
 
 type TokenName struct {
-	Name string `json:"name"`
+	Name   string `json:"name"`
+	Symbol string `json:"symbol"`
 }
 
 func init() {
@@ -209,7 +210,7 @@ func fetchAccountTransfers(address string, tokenHash string) map[string]interfac
 	return transfersData
 }
 
-func fetchTokenNameAndDecimals(tokenHash string) (int, string) {
+func fetchTokenNameAndDecimals(tokenHash string) (int, string, string) {
 	resp, err := http.Get("https://api.solana.fm/v1/tokens/" + tokenHash)
 	if err != nil {
 		panic(err)
@@ -231,7 +232,7 @@ func fetchTokenNameAndDecimals(tokenHash string) (int, string) {
 		panic(err)
 	}
 
-	return data.Decimals, data.TokenInfo.Name
+	return data.Decimals, data.TokenInfo.Name, data.TokenInfo.Symbol
 }
 
 func fetchHistoryCoinPrice(symbol string, timestamp string) {
