@@ -38,6 +38,15 @@ type TransferResponse struct {
 	Results []Transfer `json:"results"`
 }
 
+type TokenNameAndDecimals struct {
+	Decimals  int       `json:"decimals"`
+	TokenInfo TokenName `json:"tokenList"`
+}
+
+type TokenName struct {
+	Name string `json:"name"`
+}
+
 func init() {
 	// loads values from .env into the system
 	if err := godotenv.Load(); err != nil {
@@ -198,4 +207,49 @@ func fetchAccountTransfers(address string, tokenHash string) map[string]interfac
 	}
 
 	return transfersData
+}
+
+func fetchTokenNameAndDecimals(tokenHash string) (int, string) {
+	resp, err := http.Get("https://api.solana.fm/v1/tokens/" + tokenHash)
+	if err != nil {
+		panic(err)
+	}
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
+
+	var responseBody = bytes.Buffer{}
+	_, err = responseBody.ReadFrom(resp.Body)
+	decodedResp := responseBody.String()
+
+	var data TokenNameAndDecimals
+	err = json.Unmarshal([]byte(decodedResp), &data)
+	if err != nil {
+		panic(err)
+	}
+
+	return data.Decimals, data.TokenInfo.Name
+}
+
+func fetchHistoryCoinPrice(symbol string, timestamp string) {
+	params := map[string]interface{}{
+		"fsym":  symbol,
+		"tsym":  "USDT",
+		"toTs":  timestamp,
+		"limit": 1,
+	}
+
+	dataInBytes, err := json.Marshal(params)
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := http.Post("https://mainnet.helius-rpc.com/?api-key="+os.Getenv("HELIUS_API"), "application/json", bytes.NewBuffer(dataInBytes))
+	if err != nil {
+		panic(err)
+	}
+	println(resp)
 }
