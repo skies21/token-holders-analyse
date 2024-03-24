@@ -231,7 +231,7 @@ func fetchTokenNameAndDecimals(tokenHash string) (int, string, string) {
 	return data.Decimals, data.TokenInfo.Name, data.TokenInfo.Symbol
 }
 
-func fetchHistoryCoinPrice(symbol string, timestamp string) {
+func fetchHistoryCoinPrice(symbol string, timestamp int) float64 {
 	params := map[string]interface{}{
 		"fsym":  symbol,
 		"tsym":  "USDT",
@@ -244,9 +244,34 @@ func fetchHistoryCoinPrice(symbol string, timestamp string) {
 		panic(err)
 	}
 
-	resp, err := http.Post("https://mainnet.helius-rpc.com/?api-key="+os.Getenv("HELIUS_API"), "application/json", bytes.NewBuffer(dataInBytes))
+	resp, err := http.Post("https://min-api.cryptocompare.com/data/v2/histoday", "application/json", bytes.NewBuffer(dataInBytes))
 	if err != nil {
 		panic(err)
 	}
-	println(resp)
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
+
+	var responseBody = bytes.Buffer{}
+	_, err = responseBody.ReadFrom(resp.Body)
+	decodedResp := responseBody.String()
+
+	var data map[string]interface{}
+	err = json.Unmarshal([]byte(decodedResp), &data)
+	if err != nil {
+		panic(err)
+	}
+	highPrices := data["Data"].(map[string]interface{})["Data"].([]interface{})
+	totalHighPrice := 0.0
+	for _, entry := range highPrices {
+		entryData := entry.(map[string]interface{})
+		highPrice := entryData["high"].(float64)
+		totalHighPrice += highPrice
+	}
+
+	avgPrice := totalHighPrice / float64(len(highPrices))
+	return avgPrice
 }
