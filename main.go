@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	"io"
 	"log"
 	"math"
@@ -48,6 +50,8 @@ type TokenInfo struct {
 	} `json:"tokenList"`
 }
 
+var ctx = context.Background()
+
 func init() {
 	// loads values from .env into the system
 	if err := godotenv.Load(); err != nil {
@@ -56,6 +60,11 @@ func init() {
 }
 
 func main() {
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
 	tokenHash := "EMcz7rjNJatWAPvG34iPgrwhcnfZdBWKJQFR1b6rCWT2"
 	accounts := fetchTokenHolders(tokenHash)
 
