@@ -50,6 +50,12 @@ type TokenInfo struct {
 	} `json:"tokenList"`
 }
 
+type TradeInfo struct {
+	tokenName string
+	amount    float64
+	timestamp string
+}
+
 var ctx = context.Background()
 
 func init() {
@@ -79,16 +85,18 @@ func main() {
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
 
-	transfers := make(map[string]interface{})
+	transfers := make(map[string][]TradeInfo)
 	for i := 0; i < stackLen; i++ {
 		for _, account := range accounts[i*rateLimit : (i+1)*rateLimit] {
 			wg.Add(1)
 			go func(address string) {
 				defer wg.Done()
 				accountTransfers := fetchAccountTransfers(address, tokenHash, rdb)
-				mutex.Lock()
-				transfers[address] = accountTransfers
-				mutex.Unlock()
+				if accountTransfers != nil {
+					mutex.Lock()
+					transfers[address] = accountTransfers
+					mutex.Unlock()
+				}
 			}(account)
 		}
 		wg.Wait()
@@ -96,6 +104,7 @@ func main() {
 			time.Sleep(time.Minute)
 		}
 	}
+	fmt.Println(transfers)
 }
 
 func fetchTokenHolders(tokenHash string) []string {
@@ -164,7 +173,7 @@ func fetchTokenHolders(tokenHash string) []string {
 	return addresses
 }
 
-func fetchAccountTransfers(address string, tokenHash string, rdb *redis.Client) map[string]interface{} {
+func fetchAccountTransfers(address string, tokenHash string, rdb *redis.Client) []TradeInfo {
 	url := "https://api.solana.fm/v0/accounts/" + address + "/transfers?mint=" + tokenHash + "&page=1"
 	req, err := http.Get(url)
 	if err != nil {
@@ -192,24 +201,15 @@ func fetchAccountTransfers(address string, tokenHash string, rdb *redis.Client) 
 		return nil
 	}
 
-	transfersData := make(map[string]interface{})
+	var tradesInfo []TradeInfo
+
 	for _, transfer := range response.Results {
 		for _, transferData := range transfer.Data {
 			if transferData.Action == "transfer" {
-				transfersData = map[string]interface{}{
-					"token":                  transferData.TokenHash,
-					"instructionIndex":       transferData.InstructionIndex,
-					"innerInstructionIndex":  transferData.InnerInstructionIndex,
-					"action":                 transferData.Action,
-					"amount":                 transferData.Amount,
-					"timestamp":              transferData.Timestamp,
-					"status":                 transferData.Status,
-					"source":                 transferData.Source,
-					"sourceAssociation":      transferData.SourceAssociation,
-					"destination":            transferData.Destination,
-					"destinationAssociation": transferData.DestinationAssociation,
+				if transferData.TokenHash == "" {
+					break
 				}
-				decimals, _, symbol := fetchTokenNameAndDecimals(transferData.TokenHash, rdb)
+				decimals, name, symbol := fetchTokenNameAndDecimals(transferData.TokenHash, rdb)
 				var totalAmount float64
 				if symbol != "Unknown" {
 					coinPrice := fetchHistoryCoinPrice(symbol, strconv.Itoa(transferData.Timestamp))
@@ -222,12 +222,18 @@ func fetchAccountTransfers(address string, tokenHash string, rdb *redis.Client) 
 					panic(err)
 				}
 				date := time.Unix(i, 3).Truncate(time.Second)
-				fmt.Printf("%s %.2f %s\n", symbol, totalAmount, date)
+				dateString := date.Format("2006-01-02 15:04:05")
+
+				tradesInfo = append(tradesInfo, TradeInfo{
+					tokenName: name,
+					amount:    totalAmount,
+					timestamp: dateString,
+				})
 			}
 		}
 	}
 
-	return transfersData
+	return tradesInfo
 }
 
 func getTokenDataFromCache(tokenHash string, rdb *redis.Client) (TokenInfo, error) {
