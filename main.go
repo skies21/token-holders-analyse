@@ -51,9 +51,9 @@ type TokenInfo struct {
 }
 
 type TradeInfo struct {
-	tokenName string
-	amount    float64
-	timestamp string
+	TokenName string  `json:"tokenName"`
+	Amount    float64 `json:"amount"`
+	Timestamp string  `json:"timestamp"`
 }
 
 var ctx = context.Background()
