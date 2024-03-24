@@ -7,6 +7,7 @@ import (
 	"github.com/joho/godotenv"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -24,7 +25,7 @@ type TransferData struct {
 	InstructionIndex       int         `json:"instructionIndex"`
 	InnerInstructionIndex  int         `json:"innerInstructionIndex"`
 	Action                 string      `json:"action"`
-	Amount                 int         `json:"amount"`
+	Amount                 float64     `json:"amount"`
 	Timestamp              int         `json:"timestamp"`
 	Status                 string      `json:"status"`
 	Source                 string      `json:"source"`
@@ -199,6 +200,19 @@ func fetchAccountTransfers(address string, tokenHash string) map[string]interfac
 					"destination":            transferData.Destination,
 					"destinationAssociation": transferData.DestinationAssociation,
 				}
+				decimals, _, symbol := fetchTokenNameAndDecimals(transferData.TokenHash)
+				var totalAmount float64
+				if symbol != "Unknown" {
+					coinPrice := fetchHistoryCoinPrice(symbol, strconv.Itoa(transferData.Timestamp))
+					totalAmount = transferData.Amount / math.Pow(10, float64(decimals)) * coinPrice
+				} else {
+					break
+				}
+				i, err := strconv.ParseInt(strconv.Itoa(transferData.Timestamp), 10, 64)
+				if err != nil {
+					panic(err)
+				}
+				date := time.Unix(i, 3).Truncate(time.Second)
 			}
 		}
 	}
@@ -225,13 +239,13 @@ func fetchTokenNameAndDecimals(tokenHash string) (int, string, string) {
 	var data TokenInfo
 	err = json.Unmarshal([]byte(decodedResp), &data)
 	if err != nil {
-		panic(err)
+		return 0, "Unknown", "Unknown"
 	}
 
 	return data.Decimals, data.TokenInfo.Name, data.TokenInfo.Symbol
 }
 
-func fetchHistoryCoinPrice(symbol string, timestamp int) float64 {
+func fetchHistoryCoinPrice(symbol string, timestamp string) float64 {
 	params := map[string]interface{}{
 		"fsym":  symbol,
 		"tsym":  "USDT",
@@ -263,8 +277,17 @@ func fetchHistoryCoinPrice(symbol string, timestamp int) float64 {
 	err = json.Unmarshal([]byte(decodedResp), &data)
 	if err != nil {
 		panic(err)
+
+	dataData, ok := data["Data"].(map[string]interface{})
+	if !ok || dataData == nil {
+		return 0.0
 	}
-	highPrices := data["Data"].(map[string]interface{})["Data"].([]interface{})
+
+	highPrices, ok := dataData["Data"].([]interface{})
+	if !ok || highPrices == nil {
+		return 0.0
+	}
+
 	totalHighPrice := 0.0
 	for _, entry := range highPrices {
 		entryData := entry.(map[string]interface{})
