@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"io"
@@ -66,45 +67,64 @@ func init() {
 }
 
 func main() {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-	tokenHash := "EMcz7rjNJatWAPvG34iPgrwhcnfZdBWKJQFR1b6rCWT2"
-	accounts := fetchTokenHolders(tokenHash)
+	app := fiber.New()
 
-	rateLimit, err := strconv.Atoi(os.Getenv("RATE_LIMIT"))
+	app.Get("/:tokenHash", func(c *fiber.Ctx) error {
+		tokenHash := c.Params("tokenHash")
+		if tokenHash == "" {
+			return c.SendString("Missing tokenHash")
+		}
+
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     "localhost:6379",
+			Password: "",
+			DB:       0,
+		})
+		//tokenHash := "EMcz7rjNJatWAPvG34iPgrwhcnfZdBWKJQFR1b6rCWT2"
+		accounts := fetchTokenHolders(tokenHash)
+
+		rateLimit, err := strconv.Atoi(os.Getenv("RATE_LIMIT"))
+		if err != nil {
+			panic(err)
+			return err
+		}
+		//stackLen := len(accounts) / rateLimit
+		stackLen := 1
+
+		var wg sync.WaitGroup
+		var mutex sync.Mutex
+
+		transfers := make(map[string][]TradeInfo)
+		for i := 0; i < stackLen; i++ {
+			for _, account := range accounts[i*rateLimit : (i+1)*rateLimit] {
+				wg.Add(1)
+				go func(address string) {
+					defer wg.Done()
+					accountTransfers := fetchAccountTransfers(address, tokenHash, rdb)
+					if accountTransfers != nil {
+						mutex.Lock()
+						transfers[address] = accountTransfers
+						mutex.Unlock()
+					}
+				}(account)
+			}
+			wg.Wait()
+			if i != stackLen-1 {
+				time.Sleep(time.Minute)
+			}
+		}
+		TransfersData, err := json.Marshal(transfers)
+		if err != nil {
+			panic(err)
+		}
+		jsonTransfersData := string(TransfersData)
+		return c.SendString(jsonTransfersData)
+	})
+
+	err := app.Listen(":3000")
 	if err != nil {
-		panic(err)
 		return
 	}
-	//stackLen := len(accounts) / rateLimit
-	stackLen := 1
-
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
-
-	transfers := make(map[string][]TradeInfo)
-	for i := 0; i < stackLen; i++ {
-		for _, account := range accounts[i*rateLimit : (i+1)*rateLimit] {
-			wg.Add(1)
-			go func(address string) {
-				defer wg.Done()
-				accountTransfers := fetchAccountTransfers(address, tokenHash, rdb)
-				if accountTransfers != nil {
-					mutex.Lock()
-					transfers[address] = accountTransfers
-					mutex.Unlock()
-				}
-			}(account)
-		}
-		wg.Wait()
-		if i != stackLen-1 {
-			time.Sleep(time.Minute)
-		}
-	}
-	fmt.Println(transfers)
 }
 
 func fetchTokenHolders(tokenHash string) []string {
@@ -225,9 +245,9 @@ func fetchAccountTransfers(address string, tokenHash string, rdb *redis.Client) 
 				dateString := date.Format("2006-01-02 15:04:05")
 
 				tradesInfo = append(tradesInfo, TradeInfo{
-					tokenName: name,
-					amount:    totalAmount,
-					timestamp: dateString,
+					TokenName: name,
+					Amount:    totalAmount,
+					Timestamp: dateString,
 				})
 			}
 		}
