@@ -85,7 +85,7 @@ func main() {
 			wg.Add(1)
 			go func(address string) {
 				defer wg.Done()
-				accountTransfers := fetchAccountTransfers(address, tokenHash)
+				accountTransfers := fetchAccountTransfers(address, tokenHash, rdb)
 				mutex.Lock()
 				transfers[address] = accountTransfers
 				mutex.Unlock()
@@ -164,7 +164,7 @@ func fetchTokenHolders(tokenHash string) []string {
 	return addresses
 }
 
-func fetchAccountTransfers(address string, tokenHash string) map[string]interface{} {
+func fetchAccountTransfers(address string, tokenHash string, rdb *redis.Client) map[string]interface{} {
 	url := "https://api.solana.fm/v0/accounts/" + address + "/transfers?mint=" + tokenHash + "&page=1"
 	req, err := http.Get(url)
 	if err != nil {
@@ -188,7 +188,7 @@ func fetchAccountTransfers(address string, tokenHash string) map[string]interfac
 	var response TransferResponse
 	err = json.Unmarshal([]byte(decodedReq), &response)
 	if err != nil {
-		fmt.Println("Ошибка при разборе JSON:", err)
+		fmt.Println("fetchAccountTransfers(): ", err)
 		return nil
 	}
 
@@ -209,7 +209,7 @@ func fetchAccountTransfers(address string, tokenHash string) map[string]interfac
 					"destination":            transferData.Destination,
 					"destinationAssociation": transferData.DestinationAssociation,
 				}
-				decimals, _, symbol := fetchTokenNameAndDecimals(transferData.TokenHash)
+				decimals, _, symbol := fetchTokenNameAndDecimals(transferData.TokenHash, rdb)
 				var totalAmount float64
 				if symbol != "Unknown" {
 					coinPrice := fetchHistoryCoinPrice(symbol, strconv.Itoa(transferData.Timestamp))
@@ -222,6 +222,7 @@ func fetchAccountTransfers(address string, tokenHash string) map[string]interfac
 					panic(err)
 				}
 				date := time.Unix(i, 3).Truncate(time.Second)
+				fmt.Printf("%s %.2f %s\n", symbol, totalAmount, date)
 			}
 		}
 	}
@@ -229,7 +230,27 @@ func fetchAccountTransfers(address string, tokenHash string) map[string]interfac
 	return transfersData
 }
 
-func fetchTokenNameAndDecimals(tokenHash string) (int, string, string) {
+func getTokenDataFromCache(tokenHash string, rdb *redis.Client) (TokenInfo, error) {
+	val, err := rdb.HGet(ctx, "tokenData", tokenHash).Result()
+	if err != nil {
+		return TokenInfo{}, err
+	}
+
+	var data TokenInfo
+	err = json.Unmarshal([]byte(val), &data)
+	if err != nil {
+		return TokenInfo{}, err
+	}
+
+	return data, nil
+}
+
+func fetchTokenNameAndDecimals(tokenHash string, rdb *redis.Client) (int, string, string) {
+	hashedData, err := getTokenDataFromCache(tokenHash, rdb)
+	if err == nil {
+		return hashedData.Decimals, hashedData.TokenInfo.Name, hashedData.TokenInfo.Symbol
+	}
+
 	resp, err := http.Get("https://api.solana.fm/v1/tokens/" + tokenHash)
 	if err != nil {
 		panic(err)
@@ -249,6 +270,16 @@ func fetchTokenNameAndDecimals(tokenHash string) (int, string, string) {
 	err = json.Unmarshal([]byte(decodedResp), &data)
 	if err != nil {
 		return 0, "Unknown", "Unknown"
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		panic(err)
+	}
+
+	err = rdb.HSet(ctx, "tokenData", tokenHash, jsonData).Err()
+	if err != nil {
+		panic(err)
 	}
 
 	return data.Decimals, data.TokenInfo.Name, data.TokenInfo.Symbol
@@ -285,7 +316,8 @@ func fetchHistoryCoinPrice(symbol string, timestamp string) float64 {
 	var data map[string]interface{}
 	err = json.Unmarshal([]byte(decodedResp), &data)
 	if err != nil {
-		panic(err)
+		fmt.Println("fetchHistoryCoinPrice(): ", err)
+	}
 
 	dataData, ok := data["Data"].(map[string]interface{})
 	if !ok || dataData == nil {
