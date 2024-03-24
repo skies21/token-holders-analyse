@@ -20,6 +20,7 @@ type Transfer struct {
 }
 
 type TransferData struct {
+	TokenHash              string      `json:"token"`
 	InstructionIndex       int         `json:"instructionIndex"`
 	InnerInstructionIndex  int         `json:"innerInstructionIndex"`
 	Action                 string      `json:"action"`
@@ -186,6 +187,7 @@ func fetchAccountTransfers(address string, tokenHash string) map[string]interfac
 		for _, transferData := range transfer.Data {
 			if transferData.Action == "transfer" {
 				transfersData = map[string]interface{}{
+					"token":                  transferData.TokenHash,
 					"instructionIndex":       transferData.InstructionIndex,
 					"innerInstructionIndex":  transferData.InnerInstructionIndex,
 					"action":                 transferData.Action,
