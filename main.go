@@ -38,14 +38,12 @@ type TransferResponse struct {
 	Results []Transfer `json:"results"`
 }
 
-type TokenNameAndDecimals struct {
-	Decimals  int       `json:"decimals"`
-	TokenInfo TokenName `json:"tokenList"`
-}
-
-type TokenName struct {
-	Name   string `json:"name"`
-	Symbol string `json:"symbol"`
+type TokenInfo struct {
+	Decimals  int `json:"decimals"`
+	TokenInfo struct {
+		Name   string `json:"name"`
+		Symbol string `json:"symbol"`
+	} `json:"tokenList"`
 }
 
 func init() {
@@ -72,7 +70,6 @@ func main() {
 
 	transfers := make(map[string]interface{})
 	for i := 0; i < stackLen; i++ {
-		println("its i", i)
 		for _, account := range accounts[i*rateLimit : (i+1)*rateLimit] {
 			wg.Add(1)
 			go func(address string) {
@@ -87,9 +84,6 @@ func main() {
 		if i != stackLen-1 {
 			time.Sleep(time.Minute)
 		}
-	}
-	for key, value := range transfers {
-		fmt.Println(key, value)
 	}
 }
 
@@ -226,7 +220,7 @@ func fetchTokenNameAndDecimals(tokenHash string) (int, string, string) {
 	_, err = responseBody.ReadFrom(resp.Body)
 	decodedResp := responseBody.String()
 
-	var data TokenNameAndDecimals
+	var data TokenInfo
 	err = json.Unmarshal([]byte(decodedResp), &data)
 	if err != nil {
 		panic(err)
