@@ -1,7 +1,8 @@
 package delivery
 
 import (
-	"TokenHoldersAnalyse/internal/usecase"
+	"TokenHoldersAnalyse/internal/entity"
+	"TokenHoldersAnalyse/internal/pkg"
 	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"os"
@@ -10,17 +11,16 @@ import (
 	"time"
 )
 
-func InitHandlers(app *fiber.App) {
-	app.Get("/:tokenHash", FetchTokenHolders)
-}
-
-func FetchTokenHolders(c *fiber.Ctx) error {
+func FetchTransfersData(c *fiber.Ctx) error {
 	tokenHash := c.Params("tokenHash")
 	if tokenHash == "" {
 		return c.SendString("Missing tokenHash")
 	}
 
-	accounts := usecase.FetchTokenHolders(tokenHash)
+	accounts := pkg.FetchTokenHolders(tokenHash)
+	if len(accounts) == 0 {
+		return c.SendString("No accounts found")
+	}
 
 	rateLimit, err := strconv.Atoi(os.Getenv("RATE_LIMIT"))
 	if err != nil {
@@ -33,13 +33,13 @@ func FetchTokenHolders(c *fiber.Ctx) error {
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
 
-	transfers := make(map[string][]usecase.TradeInfo)
+	transfers := make(map[string][]entity.TradeInfo)
 	for i := 0; i < stackLen; i++ {
 		for _, account := range accounts[i*rateLimit : (i+1)*rateLimit] {
 			wg.Add(1)
 			go func(address string) {
 				defer wg.Done()
-				accountTransfers := usecase.FetchAccountTransfers(address, tokenHash)
+				accountTransfers := pkg.FetchAccountTransfers(address, tokenHash)
 				if accountTransfers != nil {
 					mutex.Lock()
 					transfers[address] = accountTransfers

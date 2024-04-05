@@ -1,7 +1,7 @@
 package main
 
 import (
-	"TokenHoldersAnalyse/internal/delivery"
+	"TokenHoldersAnalyse/internal/delivery/http"
 	"TokenHoldersAnalyse/internal/redisClient"
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
@@ -18,7 +18,7 @@ func init() {
 func main() {
 	app := fiber.New()
 	redisClient.InitRedis()
-	delivery.InitHandlers(app)
+	http.InitHandlers(app)
 
 	err := app.Listen(":3000")
 	if err != nil {
